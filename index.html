@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Boss Timing</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      overflow-x: hidden;
+      font-family: Arial, sans-serif;
+      background-color: #f2f2f2;
+    }
+    .container {
+      max-width: 100%;
+      padding: 0 10px;
+      box-sizing: border-box;
+    }
+    h1 {
+      text-align: center;
+      color: #2c3e50;
+      margin: 20px 0;
+    }
+    .topbar {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .topbar label {
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background-color: #fff;
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
+    .topbar input[type="text"] {
+      padding: 6px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      width: 200px;
+    }
+    table {
+      width: 90%;
+      border-collapse: collapse;
+      background: #fff;
+      margin: 0 auto;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      text-align: center;
+      padding: 2px;
+      vertical-align: middle;
+    }
+    th {
+      background-color: #3498db;
+      color: white;
+    }
+    tr.spawned {
+      background-color: #f8d7da;
+    }
+    input[type="datetime-local"] {
+      width: 160px;
+      padding: 5px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+    .clear-btn {
+      margin-top: 4px;
+      padding: 4px 8px;
+      font-size: 12px;
+      border: none;
+      border-radius: 4px;
+      background-color: #e74c3c;
+      color: white;
+      cursor: pointer;
+    }
+    .clear-btn:hover {
+      background-color: #c0392b;
+    }
+    @media (max-width: 480px) {
+      input[type="datetime-local"] {
+        width: 100%;
+      }
+      table, th, td {
+        font-size: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Boss timing</h1>
+    <div class="topbar">
+      <label>
+        <input type="checkbox" id="toggleSort" onchange="renderTable()" />
+        Ưu tiên boss sắp xuất hiện
+      </label>
+      <div style="display: flex; gap: 6px;">
+        <input type="text" id="searchInput" placeholder="Tìm tên boss..." oninput="renderTable()" />
+        <button class="clear-btn" onclick="document.getElementById('searchInput').value=''; renderTable();">Xóa</button>
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Zone</th>
+          <th>Location</th>
+          <th>Name</th>
+          <th>Level</th>
+          <th>Respawn</th>
+          <th>Thời gian</th>
+        </tr>
+      </thead>
+      <tbody id="bossBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Tabletop -->
+  <script src="https://cdn.jsdelivr.net/npm/tabletop@1.5.1/tabletop.min.js"></script>
+  <script>
+    let bossList = [];
+
+    function saveTime(index, timeStr) {
+      localStorage.setItem("boss_" + index, timeStr);
+    }
+
+    function loadTime(index) {
+      return localStorage.getItem("boss_" + index);
+    }
+
+    function clearTime(index) {
+      localStorage.removeItem("boss_" + index);
+      renderTable();
+    }
+
+    function formatDateTime(dt) {
+      return dt.toLocaleString("vi-VN", { hour12: false });
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById("bossBody");
+      tbody.innerHTML = "";
+      const now = new Date();
+      const isSort = document.getElementById("toggleSort").checked;
+      const searchText = document.getElementById("searchInput").value.toLowerCase();
+
+      let data = bossList.map((b, i) => {
+        const kill = loadTime(i);
+        const killTime = kill ? new Date(kill) : null;
+        const respawnTime = killTime && b.respawn
+          ? new Date(killTime.getTime() + b.respawn * 60 * 60 * 1000)
+          : null;
+        return { ...b, index: i, killTime, respawnTime };
+      });
+
+      data = data.filter(b => b.name.toLowerCase().includes(searchText));
+
+      if (isSort) {
+        const withRespawn = data.filter(b => b.respawnTime).sort((a, b) => a.respawnTime - b.respawnTime);
+        const withoutRespawn = data.filter(b => !b.respawnTime);
+        data = [...withRespawn, ...withoutRespawn];
+      }
+
+      for (const boss of data) {
+        const tr = document.createElement("tr");
+        if (boss.respawnTime && boss.respawnTime <= now) tr.classList.add("spawned");
+
+        const killTimeValue = boss.killTime ? boss.killTime.toISOString().slice(0, 16) : "";
+        const respawnText = boss.respawnTime ? formatDateTime(boss.respawnTime) : "";
+
+        tr.innerHTML = `
+          <td>${boss.zone}</td>
+          <td>${boss.location}</td>
+          <td>${boss.name}</td>
+          <td>${boss.level}</td>
+          <td>${boss.respawn > 0 ? boss.respawn + " giờ" : "-"}</td>
+          <td>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <div style="display: flex; justify-content: space-between;">
+                <label style="font-size: 12px;">Tiêu diệt:</label>
+                <input type="datetime-local" value="${killTimeValue}" onchange="onTimeChange(${boss.index}, this.value)" />
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label style="font-size: 12px;">Hồi sinh:</label>
+                <span style="font-weight: bold; font-size: 14px;">${respawnText}</span>
+              </div>
+              <button class="clear-btn" onclick="clearTime(${boss.index})">Xóa</button>
+            </div>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function onTimeChange(index, value) {
+      saveTime(index, value);
+      renderTable();
+    }
+
+    // Load từ Google Sheet
+    window.addEventListener("DOMContentLoaded", () => {
+      Tabletop.init({
+        key: 'https://docs.google.com/spreadsheets/d/1eunL9FZHXPTNiyaXoRs7K7WNK-2QjSlF8gnlpZsON80/pubhtml',
+        simpleSheet: true,
+        callback: function(data) {
+          bossList = data.map((b, i) => ({
+            zone: b.zone,
+            location: b.location,
+            name: b.name,
+            level: parseInt(b.level),
+            respawn: parseFloat(b.respawn),
+            index: i
+          }));
+          renderTable();
+        }
+      });
+    });
+  </script>
+</body>
+</html>
