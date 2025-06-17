@@ -11,13 +11,10 @@
       font-family: Arial, sans-serif;
       font-weight: bold;
       background-color: #f2f2f2;
-}
-
-.dark-mode body {
-  background-color: #1e1e1e;
-  color: white;
-}
-      font-family: Arial, sans-serif; background-color: #f2f2f2;
+    }
+    .dark-mode body {
+      background-color: #1e1e1e;
+      color: white;
     }
     .container { max-width: 100%; padding: 0 10px; }
     h1 { text-align: center; color: #2c3e50; margin: 20px 0; }
@@ -58,12 +55,9 @@
       border-radius: 6px; opacity: 0.9; font-size: 14px;
       z-index: 9999; animation: fadein 0.3s ease-in-out;
     }
-    .history-list {
-      font-size: 12px; color: #444;
-    }
-    .dark-mode {
-      background-color: #1e1e1e; color: white;
-    }
+    .history-toggle { margin-top: 6px; display: flex; align-items: center; gap: 4px; font-size: 13px; }
+    .history-list { font-size: 13px; margin-top: 6px; display: none; color: #444; }
+    .dark-mode { background-color: #1e1e1e; color: white; }
     .dark-mode table { background-color: #2c2c2c; color: white; }
     .dark-mode th { background-color: #444; }
     .dark-mode td { border-color: #666; }
@@ -118,6 +112,14 @@
 
   <script>
     const postURL = "https://script.google.com/macros/s/AKfycby_L9wMmbtFTnHskYAlZVA7Lt_A7ajdD7Spcu8xIdmnYNJLiuOG2mvzzg8vhD08nxCz/exec";
+    const fetchURL = "https://script.google.com/macros/s/AKfycbyo7xVyR5OVsZAx0TB4Ta-H2t-KuNJ7sn1DMqXfJKXN3cqHdngx0MMhYqBnqGHvMcyM/exec";
+
+    function getDelay(level) {
+      const lv = parseInt(level);
+      if (lv >= 65) return 15;
+      if (lv >= 55) return 10;
+      return 5;
+    }
 
     function toggleTheme() {
       const html = document.documentElement;
@@ -137,23 +139,65 @@
     let bossList = [];
 
     function saveTime(index, timeStr) {
-      const boss = bossList[index];
-      const key = "boss_" + index;
-      let history = JSON.parse(localStorage.getItem(key + "_history") || "[]");
-      history.unshift(timeStr);
-      history = history.slice(0, 5);
-      localStorage.setItem(key + "_history", JSON.stringify(history));
-      localStorage.setItem(key, timeStr);
-      sendKillTimeToSheet(boss, timeStr);
-    }
+  const boss = bossList[index];
+  const base = new Date(timeStr);
+  const now = new Date();
+  const delay = getDelay(boss.level);
+  const cycleMs = boss.respawn * 3600000 + delay * 60000;
+
+  let adjustedTime = new Date(base.getTime());
+  while (adjustedTime.getTime() + cycleMs <= now.getTime()) {
+    adjustedTime = new Date(adjustedTime.getTime() + cycleMs);
+  }
+
+  // Lưu mốc gần nhất trước hiện tại
+  const key = "boss_" + index;
+  let history = JSON.parse(localStorage.getItem(key + "_history") || "[]");
+  history.unshift(adjustedTime.toISOString());
+  history = history.slice(0, 5);
+  localStorage.setItem(key, adjustedTime.toISOString());
+  localStorage.setItem(key + "_history", JSON.stringify(history));
+
+  sendKillTimeToSheet(boss, adjustedTime.toISOString());
+  renderTable();
+}
+  
+
+
 
     function loadTime(index) {
       return localStorage.getItem("boss_" + index);
     }
 
     function loadHistory(index) {
-      return JSON.parse(localStorage.getItem("boss_" + index + "_history") || "[]");
-    }
+  const boss = bossList[index];
+  const baseKill = localStorage.getItem("boss_" + index);
+  const delay = getDelay(boss.level);
+  const respawnHour = boss.respawn;
+
+  if (!baseKill || !respawnHour) return [];
+
+  const now = new Date();
+  const base = new Date(baseKill);
+  const cycleMs = respawnHour * 3600000 + delay * 60000;
+
+  const history = [];
+  let count = 0;
+
+  // Tính số lần respawn đã xảy ra từ base đến hiện tại
+  let passedCycles = Math.floor((now - base) / cycleMs);
+
+  // Lấy 5 mốc gần hiện tại nhất, tính lùi về quá khứ
+  for (let i = passedCycles; i >= 0 && count < 5; i--) {
+    const time = new Date(base.getTime() + i * cycleMs);
+    history.push(time);
+    count++;
+  }
+
+  return history;
+}
+
+
 
     function clearTime(index) {
       localStorage.removeItem("boss_" + index);
@@ -162,25 +206,23 @@
     }
 
     function sendKillTimeToSheet(boss, timeStr) {
-      const payload = {
-        name: boss.name,
-        zone: boss.zone,
-        location: boss.location,
-        killTime: timeStr
-      };
+  fetch(postURL, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    name: boss.name,
+    zone: boss.zone,
+    location: boss.location,
+    killTime: timeStr
+  })
+})
+.then(() => showToast("Đã gửi lên Sheet"))
+.catch(() => showToast("Gửi thất bại"));
+ 
+}
 
-      fetch(postURL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      })
-      .then(res => {
-        if (!res.ok) throw new Error("POST failed");
-        return res.text();
-      })
-      .then(() => showToast("Đã gửi lên Sheet"))
-      .catch(() => showToast("Lỗi gửi dữ liệu"));
-    }
 
     function formatDateTime(dt) {
       return dt.toLocaleString("vi-VN", {
@@ -206,9 +248,18 @@
 
       let data = bossList.map((b, i) => {
         const kill = loadTime(i);
-        const killTime = kill ? new Date(kill) : null;
-        const respawnTime = killTime && b.respawn ? new Date(killTime.getTime() + b.respawn * 60 * 60 * 1000) : null;
-        return { ...b, index: i, killTime, respawnTime };
+        let last = kill ? new Date(kill) : null;
+        let next = null;
+
+        if (last && b.respawn) {
+          const delay = getDelay(b.level);
+          do {
+            next = new Date(last.getTime() + b.respawn * 3600000 + delay * 60000);
+            last = new Date(next);
+          } while (next < now);
+        }
+
+        return { ...b, index: i, killTime: kill ? new Date(kill) : null, respawnTime: next };
       });
 
       data = data.filter(b => b.name.toLowerCase().includes(searchText));
@@ -233,117 +284,79 @@
 
         const killTimeVal = boss.killTime ? new Date(boss.killTime.getTime() - boss.killTime.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
         const respawnVal = boss.respawnTime ? formatDateTime(boss.respawnTime) : "-";
-
-        const history = loadHistory(boss.index)
-          .map(t => `• ${formatDateTime(new Date(t))}`)
-          .join("<br>");
+        const historyList = loadHistory(boss.index).map(h => `<li>${formatDateTime(new Date(h))}</li>`).join("");
 
         tr2.innerHTML = `
-          <td colspan="5">
-            <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 4px 8px; flex-wrap: wrap;">
-              <div style="display: flex; align-items: center; gap: 4px;">
-                <label><b>Tiêu diệt:</b></label>
-                <input type="datetime-local" value="${killTimeVal}" onchange="onTimeChange(${boss.index}, this.value)" />
-              </div>
-              <div><b>Hồi sinh: ${respawnVal}</b></div>
-              <div style="display: flex; gap: 5px;">
-                <button class="copy-btn" onclick="copyLog('${boss.name}', '${boss.location}', '${respawnVal}')">Copy</button>
-                <button class="clear-btn" onclick="clearTime(${boss.index})">Xóa</button>
-              </div>
-            </div>
-            <div class="history-list"><b>Lịch sử tiêu diệt:</b><br>${history}</div>
-            ${getKillHistoryLines(boss) ? `<div><b>Lịch sử:</b><ul>${getKillHistoryLines(boss)}</ul></div>` : ""}
-          </td>
-        `;
+  <td colspan="5">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <label><b>Tiêu diệt:</b></label>
+        <input type="datetime-local" value="${killTimeVal}" onchange="saveTime(${boss.index}, this.value)" />
+      </div>
+      <div><b>Hồi sinh: ${respawnVal}</b></div>
+      <div style="display: flex; gap: 6px;">
+        <button class="copy-btn" onclick="copyLog('${boss.name}', '${boss.location}', '${respawnVal}')">Copy</button>
+        <button class="clear-btn" onclick="clearTime(${boss.index})">Xóa</button>
+      </div>
+    </div>
+    <div class="history-toggle">
+      <input type="checkbox" id="historyToggle_${boss.index}" name="historyToggle_${boss.index}" onchange="toggleHistory(${boss.index})" />
+      <label for="historyToggle_${boss.index}">Lịch sử tiêu diệt</label>
+    </div>
+    <ul id="historyList_${boss.index}" class="history-list">${historyList}</ul>
+  </td>
+`;
+
 
         tbody.appendChild(tr1);
         tbody.appendChild(tr2);
       }
     }
 
-    function onTimeChange(index, value) {
-      saveTime(index, value);
-      renderTable();
-    }
+    function toggleHistory(index) {
+  const list = document.getElementById("historyList_" + index);
+  const toggle = document.getElementById("historyToggle_" + index);
+  if (!list || !toggle) return;
+  list.style.display = toggle.checked ? "block" : "none";
+}
+
 
     function copyLog(name, location, time) {
       const text = `Boss ${name} ở ${location} thời gian respawn ${time}`;
-      navigator.clipboard.writeText(text).then(() => {
-        showToast("Đã copy log");
-      }).catch(() => alert("Không thể copy"));
+      navigator.clipboard.writeText(text)
+        .then(() => showToast("Đã copy log"))
+        .catch(() => alert("Không thể copy"));
     }
 
     window.addEventListener("DOMContentLoaded", () => {
-      applyStoredTheme();
-      fetch("https://script.google.com/macros/s/AKfycbyo7xVyR5OVsZAx0TB4Ta-H2t-KuNJ7sn1DMqXfJKXN3cqHdngx0MMhYqBnqGHvMcyM/exec")
-        .then(res => res.json())
-        .then(data => {
-          bossList = data.map((b, i) => ({
-            zone: b.zone,
-            location: b.location,
-            name: b.name,
-            level: (b.level && !isNaN(parseInt(b.level))) ? parseInt(b.level) : '-',
-            respawn: parseFloat(b.respawn),
-            index: i
-          }));
-          renderTable();
-        });
-    });
-  </script>
-  <script>
-  const getKillHistoryURL = "https://script.google.com/macros/s/AKfycby_L9wMmbtFTnHskYAlZVA7Lt_A7ajdD7Spcu8xIdmnYNJLiuOG2mvzzg8vhD08nxCz/exec";
-  let bossKillHistory = {};
-
-  function loadKillHistoryFromSheet() {
-    fetch(getKillHistoryURL)
-      .then(res => res.json())
-      .then(data => {
-        bossKillHistory = {};
-        for (const row of data) {
-          const key = `${row.zone}|${row.location}|${row.name}`;
-          if (!bossKillHistory[key]) bossKillHistory[key] = [];
-          bossKillHistory[key].push(row.killTime);
+  applyStoredTheme();
+  fetch(fetchURL)
+    .then(res => res.json())
+    .then(data => {
+      bossList = data.map((b, i) => {
+        // Đọc killTime từ Sheet
+        if (b.killTime) {
+          try {
+            const t = new Date(b.killTime);
+            if (!isNaN(t)) {
+              localStorage.setItem("boss_" + i, t.toISOString());
+            }
+          } catch {}
         }
 
-        // Sort & trim 5 recent
-        for (const key in bossKillHistory) {
-          bossKillHistory[key].sort((a, b) => new Date(b) - new Date(a));
-          bossKillHistory[key] = bossKillHistory[key].slice(0, 5);
-        }
-
-        renderTable(); // Re-render để cập nhật
-      })
-      .catch(err => {
-        console.error("Lỗi tải lịch sử kill:", err);
-      });
-  }
-
-  function getKillHistoryLines(boss) {
-    const key = `${boss.zone}|${boss.location}|${boss.name}`;
-    const logs = bossKillHistory[key] || [];
-    return logs.map(timeStr => {
-      const dt = new Date(timeStr);
-      return `<li>${formatDateTime(dt)}</li>`;
-    }).join("");
-  }
-
-  // Gọi khi DOM ready
-  window.addEventListener("DOMContentLoaded", () => {
-    applyStoredTheme();
-    fetch("https://script.google.com/macros/s/AKfycbyo7xVyR5OVsZAx0TB4Ta-H2t-KuNJ7sn1DMqXfJKXN3cqHdngx0MMhYqBnqGHvMcyM/exec")
-      .then(res => res.json())
-      .then(data => {
-        bossList = data.map((b, i) => ({
+        return {
           zone: b.zone,
           location: b.location,
           name: b.name,
-          level: (b.level && !isNaN(parseInt(b.level))) ? parseInt(b.level) : '-',
+          level: b.level,
           respawn: parseFloat(b.respawn),
           index: i
-        }));
-        loadKillHistoryFromSheet();
-        });
+        };
+      });
+      renderTable();
     });
+});
+
   </script>
 </body>
 </html>
