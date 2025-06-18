@@ -163,6 +163,20 @@
   .copy-toast.show {
     opacity: 1;
   }
+  .delete-log {
+  background-color: #ff4d4d;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.2s ease;
+}
+
+.delete-log:hover {
+  background-color: #ff1a1a;
+}
   </style>
 </head>
 <body>
@@ -251,11 +265,13 @@
           <div class="next-respawn" id="${timeId}">Next Respawn: --</div>
           <button class="log-toggle" id="${toggleId}">Xem lịch sử</button>
           <button class="copy-log" onclick="copyLog('${id}')">COPY LOG</button>
+          <button class="delete-log" onclick="deleteBossData('${id}')">XÓA</button>
           <div class="log-box" id="${logId}"></div>
         `;
         container.appendChild(card);
 
         const inputEl = document.getElementById(inputId);
+        if (boss.killedTime) inputEl.value = new Date(boss.killedTime).toISOString().slice(0, 16);
         const timeEl = document.getElementById(timeId);
         const logEl = document.getElementById(logId);
         const toggleBtn = document.getElementById(toggleId);
@@ -419,6 +435,18 @@ function applySort(mode) {
   const sorted = Object.fromEntries(entries);
   renderBossList(sorted);
   toggleSortMenu(); // đóng menu sau khi chọn
+}
+    function deleteBossData(id) {
+  if (!confirm("Bạn có chắc muốn xóa toàn bộ dữ liệu của boss này?")) return;
+
+  const dbRef = firebase.database().ref("bosses/" + id);
+  dbRef.remove().then(() => {
+    alert("Đã xoá dữ liệu thành công!");
+    location.reload(); // Tải lại trang để cập nhật
+  }).catch((error) => {
+    console.error("Lỗi khi xoá dữ liệu:", error);
+    alert("Xoá thất bại!");
+  });
 }
   </script>
   <div id="copyToast" class="copy-toast">✅ Đã sao chép log!</div>
