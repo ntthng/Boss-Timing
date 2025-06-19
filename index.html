@@ -265,7 +265,7 @@
           <div class="next-respawn" id="${timeId}">Next Respawn: --</div>
           <button class="log-toggle" id="${toggleId}">Xem lịch sử</button>
           <button class="copy-log" onclick="copyLog('${id}')">COPY</button>
-          <button class="delete-log" onclick="deleteBossData('${id}')">XÓA</button>
+          <button class="delete-log" onclick="clearBossData('${id}')">XÓA</button>
           <div class="log-box" id="${logId}"></div>
         `;
         container.appendChild(card);
@@ -327,6 +327,8 @@
         }, 1000);
       });
     }
+
+        
 
     function updateTop10Log() {
   const now = new Date();
@@ -436,19 +438,29 @@ function applySort(mode) {
   renderBossList(sorted);
   toggleSortMenu(); // đóng menu sau khi chọn
 }
-    function deleteBossData(id) {
-  if (!confirm("Bạn có chắc muốn xóa toàn bộ dữ liệu của boss này?")) return;
+    function clearBossData(id) {
+  const input = document.getElementById(`input-${id}`);
+  const timeEl = document.getElementById(`time-${id}`);
+  const logEl = document.getElementById(`log-${id}`);
 
-  const dbRef = firebase.database().ref("bosses/" + id);
-  dbRef.remove().then(() => {
-    alert("Đã xoá dữ liệu thành công!");
-    location.reload(); // Tải lại trang để cập nhật
-  }).catch((error) => {
-    console.error("Lỗi khi xoá dữ liệu:", error);
-    alert("Xoá thất bại!");
-  });
+  // Reset UI
+  input.value = "";
+  timeEl.innerText = "Next Respawn: --";
+  logEl.textContent = "";
+
+  // Xóa khỏi Firebase
+  db.ref(`history/${id}`).set(null);
+
+  // Xóa khỏi bộ nhớ cục bộ
+  const boss = allBosses[id];
+  if (boss && bossRespawnMap[boss.name]) {
+    delete bossRespawnMap[boss.name];
+  }
+
+  showToast("🗑️ Đã xóa dữ liệu boss!");
 }
+    
   </script>
   <div id="copyToast" class="copy-toast">✅ Đã sao chép log!</div>
 </body>
-</html>a-z
+</html>
